@@ -4,9 +4,9 @@ from src.config.database import get_db
 from src.models import Job
 from src.schemas.job import JobInput
 from src.middlewares.auth import current_user, can_write, admin_only
-from src.services import jobs
+from src.services import jobs, leases
 from src.services.audit import record
-from src.utils.serialization import job_dict
+from src.utils.serialization import job_dict, job_event_dict
 router=APIRouter(prefix='/jobs')
 @router.get('')
 def listing(db=Depends(get_db),u=Depends(current_user)):
@@ -19,6 +19,20 @@ def create(data:JobInput,db=Depends(get_db),u=Depends(can_write)):
 def detail(id:int,db=Depends(get_db),u=Depends(current_user)):
     j=db.get(Job,id)
     if not j: raise HTTPException(404,'分析任务不存在')
+    return job_dict(j)
+@router.get('/{id}/events')
+def events(id:int,db=Depends(get_db),u=Depends(current_user)):
+    j=db.get(Job,id)
+    if not j: raise HTTPException(404,'分析任务不存在')
+    return [job_event_dict(e) for e in leases.events_for(db,id)]
+@router.post('/{id}/cancel')
+def cancel(id:int,db=Depends(get_db),u=Depends(can_write)):
+    j=db.get(Job,id)
+    if not j: raise HTTPException(404,'分析任务不存在')
+    if j.status not in ('queued','running'):
+        raise HTTPException(409,'仅排队或计算中的任务可以取消')
+    if not leases.cancel(db,j,u.email):
+        raise HTTPException(409,'领取端已失联，任务即将由其他端接手，暂不能取消')
     return job_dict(j)
 @router.post('/{id}/approve')
 def approve(id:int,db=Depends(get_db),u=Depends(admin_only)):

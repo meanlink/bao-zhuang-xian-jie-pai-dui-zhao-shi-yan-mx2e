@@ -4,6 +4,7 @@ from redis import Redis
 from src.config.settings import REDIS_URL
 from src.models import Dataset, Job
 from src.services.business import metadata
+from src.services.leases import log_event
 def create(db, data, user):
     if not db.get(Dataset,data.dataset_id): raise HTTPException(404,'数据批次不存在')
     allowed={p['key']:p for p in metadata().get('parameters',[])}
@@ -22,6 +23,8 @@ def create(db, data, user):
             raise HTTPException(422,f'{p["label"]} 不是有效选项')
     j=Job(name=data.name, dataset_id=data.dataset_id, params=params, created_by=user.id, created_at=time.time(), status='queued')
     db.add(j); db.flush()
+    # 排队经过随任务落库；即使 Redis 通知丢失，计算端也能从库里领到
+    log_event(db,j.id,'queued',user.email,0,{'params':params})
     return j
 def enqueue(job_id):
     try:

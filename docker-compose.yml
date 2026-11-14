@@ -49,7 +49,10 @@ services:
     build: ./backend
     container_name: ${COMPOSE_PROJECT_NAME:-pack-welch}-worker
     command: ["python", "-m", "src.worker"]
-    environment: *app-env
+    environment:
+      <<: *app-env
+      WORKER_ID: ${WORKER_ID:-worker-1}
+      JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:-30}
     volumes: ["analysis-artifacts:/artifacts"]
     depends_on:
       db: {condition: service_healthy}

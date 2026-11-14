@@ -29,7 +29,16 @@ Python 3.12 / FastAPI / SQLAlchemy / NumPy / SciPy / scikit-learn；MySQL 8.0；
 ## 目录与工程约定
 backend/src/{models,schemas,services,routes,controllers,middlewares,constants,config,utils}；backend/scripts/seed_demo.py；backend/migrations/initial.py。
 frontend/src/{api,stores,types,components/common,hooks,pages,router,utils,constants}。
-Role 枚举：admin/analyst/viewer；JobStatus：queued/running/completed/failed。后端 backend/src/constants/enums.py，前端 frontend/src/constants/enums.js；路由权限在 middlewares/auth.py；页面按相同角色控制操作入口。
+Role 枚举：admin/analyst/viewer；JobStatus：queued/running/completed/failed/cancelled。后端 backend/src/constants/enums.py，前端 frontend/src/constants/enums.js；路由权限在 middlewares/auth.py；页面按相同角色控制操作入口。
+
+## 多端接力与任务租约
+支持多计算端并发：每个任务同一时刻只认当前领取者（`worker_id` + 递增领取代号 `attempt` 栅栏令牌）。
+- 领取：worker 先消费 Redis 通知，通知丢失时由 SQL 兜底轮询领取排队任务；领取以行锁（MySQL `SKIP LOCKED`）保证多端只有一个成功。
+- 租约与心跳：领取即获得 `JOB_LEASE_SECONDS`（默认 30 秒）租约，后台每 1/3 租约时长续租；停跳到期判失联，其他端可接手，`attempt` 递增，原任务不重建。
+- 迟交拒收：旧领取者恢复后迟交的结果/失败/心跳因代号不匹配被条件更新挡下，并记 `stale_result_rejected`，不能覆盖接手后的状态。
+- 取消：工作台可取消排队或租约有效的运行中任务，`cancelled` 为终态，重启不复活、不再产出结果；已失联的任务等接手后处理。
+- 留痕：排队、领取、失联、接手、完成、失败、取消、迟交拒收均写入 `job_events`，任务页（结果复核页）可查完整经过，同时保留 `audits` 审计。
+- 重启：worker 启动不再把 running 重置为 queued；遗留任务靠租约过期接手，恢复重跑沿用同一 Job 记录。
 
 ## 环境变量与 Docker
 COMPOSE_PROJECT_NAME=pack-welch；FRONTEND_PORT=18203；BACKEND_PORT=19203；DB_PORT=17703；DB_PASSWORD、JWT_SECRET 见 .env.example；SEED_DEMO 默认 true。共享命名产物卷供后端下载与 worker 写入，数据库/Redis 各持久卷。

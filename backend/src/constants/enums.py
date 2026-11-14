@@ -8,3 +8,12 @@ class JobStatus(str, Enum):
     running = 'running'
     completed = 'completed'
     failed = 'failed'
+    cancelled = 'cancelled'
+class JobEventName(str, Enum):
+    queued = 'queued'
+    claimed = 'claimed'
+    lost = 'lost'
+    reclaimed = 'reclaimed'
+    completed = 'completed'
+    failed = 'failed'
+    cancelled = 'cancelled'
